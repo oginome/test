@@ -1,0 +1,420 @@
+HTML
+
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>半透明按鈕產生器</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+    <style>
+        /* 基礎樣式 */
+        body {
+            display: flex;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+
+        /* 選單容器樣式 */
+        #menu {
+            width: 300px;
+            min-width: 300px;
+            padding: 20px;
+            margin-right: 20px;
+            background-color: #ffffff;
+            border: 1px solid #ccc;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.1);
+            position: sticky; /* 讓選單在滾動時固定在頂部 */
+            top: 20px;
+            height: fit-content;
+        }
+
+        /* 輸入組件樣式 */
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .input-group input[type="number"],
+        .input-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box; 
+        }
+
+        /* 顯示欄位樣式 */
+        #display-fields {
+            margin-top: 20px;
+            padding-top: 10px;
+            border-top: 1px solid #eee;
+        }
+
+        #end-number {
+            font-size: 18px;
+            color: #d9534f; 
+            font-weight: bold;
+        }
+
+        /* 確定按鈕樣式 */
+        #confirm-button {
+            width: 100%;
+            padding: 10px;
+            background-color: #5cb85c;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+
+        #confirm-button:hover {
+            background-color: #4cae4c;
+        }
+
+        /* P5 畫布容器樣式 */
+        #p5-canvas {
+            flex-grow: 1; 
+            min-height: 500px;
+            border: 1px solid #ccc;
+            background-color: #ffffff;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="menu">
+        <h2>📊 按鈕參數設定</h2>
+        <hr>
+
+        <div class="input-group">
+            <label for="btn-width">半透明按鈕的寬 (pixel):</label>
+            <input type="number" id="btn-width" value="100" min="10">
+        </div>
+
+        <div class="input-group">
+            <label for="btn-height">半透明按鈕的高 (pixel):</label>
+            <input type="number" id="btn-height" value="50" min="10">
+        </div>
+
+        <div class="input-group">
+            <label for="cols">半透明按鈕的橫列 $i$ (個數):</label>
+            <input type="number" id="cols" value="5" min="1">
+        </div>
+
+        <div class="input-group">
+            <label for="rows">半透明按鈕的直行 $j$ (個數):</label>
+            <input type="number" id="rows" value="3" min="1">
+        </div>
+
+        <div class="input-group">
+            <label for="start-num">按鈕的起始號碼:</label>
+            <input type="number" id="start-num" value="1" min="0"> </div>
+
+        <div class="input-group">
+            <label for="start-point">號碼的起始點:</label>
+            <select id="start-point">
+                <option value="top-left">左上</option>
+                <option value="top-right">右上</option>
+                <option value="bottom-left" selected>左下</option> <option value="bottom-right">右下</option>
+            </select>
+        </div>
+
+        <div class="input-group">
+            <label for="sequence-type">號碼的增加順序:</label>
+            <select id="sequence-type">
+                <option value="sequential" selected>逐層依序</option> <option value="snake">蛇行</option>
+            </select>
+        </div>
+
+        <hr>
+
+        <div id="display-fields">
+            <label>按鈕的末尾號碼:</label>
+            <div id="end-number">0</div>
+        </div>
+        
+        <button id="confirm-button">確定生成</button>
+
+    </div>
+
+    <div id="p5-canvas"></div>
+
+    <script>
+        // P5.js 核心變數
+        let buttonMatrix = []; // 儲存按鈕狀態的矩陣 (1: 黃色, 0: 藍色)
+        let matrixRows = 0;
+        let matrixCols = 0;
+        let btnW = 0;
+        let btnH = 0;
+        const PADDING = 1; // 按鈕間的間隔
+        let startNum = 1;
+        let startPoint = 'bottom-left';
+        let sequenceType = 'sequential';
+
+        // =================================================================
+        // P5.js Setup
+        // =================================================================
+        function setup() {
+            let canvasContainer = document.getElementById('p5-canvas');
+            // 創建畫布，尺寸會根據容器調整
+            let canvas = createCanvas(canvasContainer.offsetWidth, 500).parent('p5-canvas');
+            rectMode(CORNER);
+            textAlign(CENTER, CENTER);
+            textSize(12);
+
+            // 初始生成矩陣
+            confirmSettings();
+            noLoop(); // 只在需要更新時重繪
+
+            // 監聽窗口大小變化，調整畫布大小
+            window.addEventListener('resize', () => {
+                let newHeight = max(500, (btnH + PADDING * 2) * matrixRows + 40); // 確保高度足夠
+                resizeCanvas(canvasContainer.offsetWidth, newHeight);
+                redraw(); 
+            });
+
+            // 綁定確認按鈕事件
+            document.getElementById('confirm-button').addEventListener('click', confirmSettings);
+        }
+
+        // =================================================================
+        // P5.js Draw Loop
+        // =================================================================
+        function draw() {
+            background(240); // 淺灰色背景
+
+            let currentNumber = startNum;
+            
+            // 總按鈕的尺寸 (含 padding)
+            let totalW = (btnW + PADDING * 2) * matrixCols;
+            let totalH = (btnH + PADDING * 2) * matrixRows;
+            
+            // 讓矩陣置中
+            let startX = (width - totalW) / 2;
+            let startY = (height - totalH) / 2;
+
+            // 遍歷所有按鈕位置
+            for (let j = 0; j < matrixRows; j++) {
+                for (let i = 0; i < matrixCols; i++) {
+                    
+                    // 1. 繪製按鈕本身
+                    let btnState = buttonMatrix[j][i];
+                    let x = startX + (btnW + PADDING * 2) * i + PADDING;
+                    let y = startY + (btnH + PADDING * 2) * j + PADDING;
+
+                    // 顏色設定
+                    if (btnState === 1) {
+                        fill(255, 255, 0, 180); // 黃色半透明
+                    } else {
+                        fill(0, 0, 255, 180); // 藍色半透明
+                    }
+                    stroke(0, 0, 0, 255); 
+                    strokeWeight(1);
+                    rect(x, y, btnW, btnH);
+
+                    // 2. 繪製矩陣元素值 (置中靠下)
+                    fill(0); // 黑色文字
+                    noStroke();
+                    textAlign(CENTER, BOTTOM);
+                    text(btnState, x + btnW / 2, y + btnH - 5); 
+                }
+            }
+
+            // 3. 繪製按鈕號碼 (需根據順序邏輯進行)
+            let tempCurrentNumber = startNum;
+            
+            for (let numIdx = 0; numIdx < matrixRows * matrixCols; numIdx++) {
+                
+                // 獲取當前順序索引 numIdx 對應到實際矩陣 (i, j) 的位置
+                let pos = getMatrixPositionBySequence(numIdx, matrixCols, matrixRows, startPoint, sequenceType);
+                let i = pos.i;
+                let j = pos.j;
+
+                // 檢查該按鈕狀態
+                if (buttonMatrix[j][i] === 1) {
+                    
+                    // 計算按鈕中心座標
+                    let x = startX + (btnW + PADDING * 2) * i + PADDING;
+                    let y = startY + (btnH + PADDING * 2) * j + PADDING;
+
+                    // 繪製號碼 (置中靠上)
+                    fill(0); 
+                    noStroke();
+                    textAlign(CENTER, TOP);
+                    text(tempCurrentNumber, x + btnW / 2, y + 5); 
+                    
+                    tempCurrentNumber++; // 號碼遞增
+                }
+                // 如果矩陣值為 0 (藍色按鈕)，則跳過顯示號碼，但 numIdx 繼續增加
+            }
+        }
+
+        // =================================================================
+        // P5.js Mouse Interaction
+        // =================================================================
+        function mousePressed() {
+            // 檢查點擊是否在畫布內
+            if (mouseX > 0 && mouseX < width && mouseY > 0 && mouseY < height) {
+                
+                let totalW = (btnW + PADDING * 2) * matrixCols;
+                let totalH = (btnH + PADDING * 2) * matrixRows;
+                let startX = (width - totalW) / 2;
+                let startY = (height - totalH) / 2;
+
+                // 檢查點擊在哪個按鈕上
+                for (let j = 0; j < matrixRows; j++) {
+                    for (let i = 0; i < matrixCols; i++) {
+                        let x = startX + (btnW + PADDING * 2) * i + PADDING;
+                        let y = startY + (btnH + PADDING * 2) * j + PADDING;
+
+                        if (mouseX > x && mouseX < x + btnW && mouseY > y && mouseY < y + btnH) {
+                            // 切換矩陣狀態 (1 -> 0, 0 -> 1)
+                            buttonMatrix[j][i] = 1 - buttonMatrix[j][i];
+                            updateEndNumber(); // 更新末尾號碼
+                            redraw(); // 立即重繪
+                            return; 
+                        }
+                    }
+                }
+            }
+        }
+        
+        // =================================================================
+        // 核心邏輯函數
+        // =================================================================
+        
+        /**
+         * 根據順序索引 (numIdx) 和設定，獲取該編號在實際矩陣中的 (i, j) 座標。
+         * @param {number} numIdx - 數字順序的索引 (0 到 N*M - 1)
+         * @param {number} cols - 總欄位數 (i)
+         * @param {number} rows - 總列數 (j)
+         * @param {string} point - 起始點 ('top-left', 'top-right', 'bottom-left', 'bottom-right')
+         * @param {string} type - 增加順序 ('sequential', 'snake')
+         * @returns {{i: number, j: number}} - 該索引對應的實際矩陣座標 (i, j)
+         */
+        function getMatrixPositionBySequence(numIdx, cols, rows, point, type) {
+            let numI, numJ; // 這是數字在邏輯順序中的 (i, j)
+
+            if (type === 'sequential') {
+                // 逐層依序
+                numJ = floor(numIdx / cols);
+                numI = numIdx % cols;
+            } else {
+                // 蛇行 (S-shape)
+                let tempRow = floor(numIdx / cols);
+                let tempCol = numIdx % cols;
+                
+                numJ = tempRow;
+                if (tempRow % 2 === 0) {
+                    numI = tempCol; // 偶數行: 左到右
+                } else {
+                    numI = cols - 1 - tempCol; // 奇數行: 右到左
+                }
+            }
+
+            // 根據起始點將邏輯座標 (numI, numJ) 轉換為實際矩陣座標 (i, j)
+            let i, j;
+            switch (point) {
+                case 'top-left':
+                    i = numI;
+                    j = numJ;
+                    break;
+                case 'top-right':
+                    i = cols - 1 - numI;
+                    j = numJ;
+                    break;
+                case 'bottom-left':
+                    i = numI;
+                    j = rows - 1 - numJ;
+                    break;
+                case 'bottom-right':
+                    i = cols - 1 - numI;
+                    j = rows - 1 - numJ;
+                    break;
+            }
+            return { i: i, j: j };
+        }
+
+
+        /**
+         * 根據輸入欄位的值，重新生成矩陣並更新所有變數。
+         */
+        function confirmSettings() {
+            // 1. 讀取輸入值
+            btnW = max(10, parseInt(document.getElementById('btn-width').value) || 100);
+            btnH = max(10, parseInt(document.getElementById('btn-height').value) || 50);
+            matrixCols = max(1, parseInt(document.getElementById('cols').value) || 5); // 變數 i (橫列)
+            matrixRows = max(1, parseInt(document.getElementById('rows').value) || 3); // 變數 j (直行)
+            startNum = parseInt(document.getElementById('start-num').value) || 1;
+            startPoint = document.getElementById('start-point').value;
+            sequenceType = document.getElementById('sequence-type').value;
+            
+            // 2. 初始化/重置按鈕矩陣
+            let newMatrix = [];
+            for (let j = 0; j < matrixRows; j++) {
+                newMatrix[j] = [];
+                for (let i = 0; i < matrixCols; i++) {
+                    // 如果矩陣尺寸未變，保持舊的狀態；否則預設為 1
+                    if (j < buttonMatrix.length && i < buttonMatrix[j].length) {
+                        newMatrix[j][i] = buttonMatrix[j][i];
+                    } else {
+                        newMatrix[j][i] = 1; // 預設值為 1 (黃色)
+                    }
+                }
+            }
+            buttonMatrix = newMatrix;
+
+            // 調整畫布尺寸以適應新的矩陣大小
+            let canvasContainer = document.getElementById('p5-canvas');
+            let newHeight = max(500, (btnH + PADDING * 2) * matrixRows + 40);
+            resizeCanvas(canvasContainer.offsetWidth, newHeight);
+            
+            // 3. 更新末尾號碼
+            updateEndNumber();
+
+            // 4. 強制重繪 P5 畫布
+            redraw();
+        }
+
+        /**
+         * 計算並更新末尾號碼。
+         * 末尾號碼 = 起始號碼 + (矩陣中元素為 1 的個數) - 1
+         */
+        function updateEndNumber() {
+            let countOnButtons = 0;
+            for (let j = 0; j < buttonMatrix.length; j++) {
+                for (let i = 0; i < buttonMatrix[j].length; i++) {
+                    if (buttonMatrix[j][i] === 1) {
+                        countOnButtons++;
+                    }
+                }
+            }
+            
+            // 末尾號碼計算邏輯: 起始號碼 + 總共顯示的號碼數量 - 1
+            let endNumberValue = startNum + countOnButtons - 1;
+            
+            // 如果沒有開啟的按鈕 (countOnButtons=0)，則末尾號碼是起始號碼 - 1
+            if (countOnButtons === 0 && startNum > 0) {
+                 endNumberValue = startNum - 1;
+            } else if (countOnButtons === 0 && startNum === 0) {
+                 endNumberValue = 0;
+            }
+            
+            document.getElementById('end-number').innerText = endNumberValue;
+        }
+
+    </script>
+
+</body>
+</html>
